@@ -3,7 +3,7 @@ Exploits Unauth Docker API (Docker Remote API Detection)
 
 First, Find an image
 
-curl http://<target-ip>:xxxx/images/json | jq
+curl http://\<target-ip\>:xxxx/images/json | jq
 
 Then update the scripts with the proper targeting information
 
