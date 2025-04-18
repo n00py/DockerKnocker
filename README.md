@@ -1,5 +1,5 @@
 # DockerKnocker
-Exploits Aunauth Docker API (Docker Remote API Detection)
+Exploits Unauth Docker API (Docker Remote API Detection)
 
 First, Find an image
 
